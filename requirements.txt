@@ -1,0 +1,6 @@
+streamlit
+http.client
+pandas
+plotly
+prophet
+requests
