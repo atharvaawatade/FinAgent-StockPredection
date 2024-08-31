@@ -5,11 +5,12 @@ import plotly.graph_objs as go
 from prophet import Prophet
 import json
 import warnings
+import os
+
 warnings.simplefilter(action='ignore', category=FutureWarning)
 
-
-# RapidAPI credentials
-RAPIDAPI_KEY = "af4b7ada73msh7333fb00c727f70p195232jsne091685d1739"
+# Load RapidAPI credentials from environment variable
+RAPIDAPI_KEY = os.getenv("RAPIDAPI_KEY")
 
 # Expanded company name to stock symbol mapping
 company_symbol_mapping = {
@@ -49,11 +50,8 @@ company_symbol_mapping = {
     "Zillow": "Z",
     "DraftKings": "DKNG",
     "Pinterest": "PINS",
-    "Alibaba": "BABA",
-    "Alibaba": "BABA",
     "Xiaomi": "XIACF",
     "Lyft": "LYFT",
-    "Uber": "UBER",
     "Moderna": "MRNA",
     "Johnson & Johnson": "JNJ",
     "Pfizer": "PFE",
@@ -86,7 +84,6 @@ company_symbol_mapping = {
     "Bluebird Bio": "BLUE",
     "Sarepta Therapeutics": "SRPT",
     "CRISPR Therapeutics": "CRSP",
-    "Docusign": "DOCU",
     "CrowdStrike": "CRWD",
     "Nutanix": "NTNX",
     "Elastic": "ESTC",
@@ -95,16 +92,16 @@ company_symbol_mapping = {
     "Okta": "OKTA",
     "ServiceNow": "NOW",
 }
+
 # Function to fetch stock data from RapidAPI
 def fetch_stock_data(symbol, time_series_type, interval=None):
     conn = http.client.HTTPSConnection("alpha-vantage.p.rapidapi.com")
+    endpoint = f"/query?function=TIME_SERIES_{time_series_type.upper()}&symbol={symbol}&"
     
     if time_series_type == "Intraday":
-        endpoint = f"/query?function=TIME_SERIES_INTRADAY&symbol={symbol}&interval={interval}&outputsize=compact&datatype=json"
-    elif time_series_type == "Weekly":
-        endpoint = f"/query?function=TIME_SERIES_WEEKLY&symbol={symbol}&outputsize=compact&datatype=json"
-    elif time_series_type == "Monthly":
-        endpoint = f"/query?function=TIME_SERIES_MONTHLY&symbol={symbol}&outputsize=compact&datatype=json"
+        endpoint += f"interval={interval}&"
+    
+    endpoint += "outputsize=compact&datatype=json"
     
     headers = {
         'x-rapidapi-key': RAPIDAPI_KEY,
@@ -112,7 +109,6 @@ def fetch_stock_data(symbol, time_series_type, interval=None):
     }
     
     conn.request("GET", endpoint, headers=headers)
-    
     response = conn.getresponse()
     data = response.read()
     
@@ -122,22 +118,11 @@ def fetch_stock_data(symbol, time_series_type, interval=None):
     
     data_json = json.loads(data.decode("utf-8"))
     
-    if "Time Series" not in str(data_json.keys()):
-        if "Error Message" in data_json:
-            st.error(f"API Error: {data_json['Error Message']}")
-        elif "Note" in data_json:
-            st.error(f"API Note: {data_json['Note']}")
-        else:
-            st.error("Unexpected error. Please try again later.")
+    if "Time Series" not in data_json:
+        st.error(f"API Error: {data_json.get('Error Message', 'Unknown error')}")
         return None
     
-    if time_series_type == "Intraday":
-        time_series_key = f"Time Series ({interval})"
-    elif time_series_type == "Weekly":
-        time_series_key = "Weekly Time Series"
-    elif time_series_type == "Monthly":
-        time_series_key = "Monthly Time Series"
-    
+    time_series_key = f"Time Series ({interval})" if time_series_type == "Intraday" else f"{time_series_type} Time Series"
     time_series = data_json.get(time_series_key)
     return time_series
 
@@ -156,14 +141,10 @@ def convert_to_dataframe(time_series):
     return df
 
 # Function to train a model and predict stock trend
-# Function to train a model and predict stock trend
 def predict_trend(df, period, freq):
     df_prophet = df.reset_index().rename(columns={"index": "ds", "Close": "y"})
-    
     model = Prophet(daily_seasonality=True)
     model.fit(df_prophet)
-
-    # Use lowercase 'h', 'w', 'm' instead of 'H', 'W', 'M'
     future = model.make_future_dataframe(periods=period, freq=freq.lower())
     forecast = model.predict(future)
 
@@ -171,15 +152,8 @@ def predict_trend(df, period, freq):
     st.pyplot(fig)
 
     forecast['trend_diff'] = forecast['yhat'].diff()
-
     last_trend = forecast['trend_diff'].iloc[-1]
-    if last_trend > 0:
-        return "Up"
-    elif last_trend < 0:
-        return "Down"
-    else:
-        return "Neutral"
-
+    return "Up" if last_trend > 0 else "Down" if last_trend < 0 else "Neutral"
 
 # Function to plot the stock data
 def plot_stock_data(df, symbol):
@@ -212,7 +186,6 @@ def main():
     search_term = st.text_input("Search for a Company", "")
     
     if search_term:
-        # Filter company names based on the search term
         filtered_companies = {name: symbol for name, symbol in company_symbol_mapping.items() if search_term.lower() in name.lower()}
         
         if filtered_companies:
@@ -221,9 +194,7 @@ def main():
                 
                 time_series_type = st.selectbox("Select Time Series Type", ["Intraday", "Weekly", "Monthly"], key=company_name)
                 
-                interval = None
-                if time_series_type == "Intraday":
-                    interval = st.selectbox("Select Interval", ["1min", "5min", "15min", "30min", "60min"], key=f'{company_name}_interval')
+                interval = st.selectbox("Select Interval", ["1min", "5min", "15min", "30min", "60min"], key=f'{company_name}_interval') if time_series_type == "Intraday" else None
                 
                 if st.button(f"Fetch Data for {company_name}"):
                     with st.spinner(f"Fetching data for {company_name}..."):
@@ -231,26 +202,15 @@ def main():
                     
                     if time_series:
                         df = convert_to_dataframe(time_series)
-                        
                         st.write(f"Showing {time_series_type.lower()} data for: **{company_name} ({stock_symbol})**")
                         st.dataframe(df.head())
                         
                         plot_stock_data(df, company_name)
                         
-                        if time_series_type == "Intraday":
-                            trend = predict_trend(df, period=1, freq='H')  # Hourly prediction
-                        elif time_series_type == "Weekly":
-                            trend = predict_trend(df, period=1, freq='W')  # Weekly prediction
-                        elif time_series_type == "Monthly":
-                            trend = predict_trend(df, period=1, freq='M')  # Monthly prediction
-                        
-                        st.markdown(f"### Predicted Trend for next {time_series_type.lower()}: **{trend}**")
-                    else:
-                        st.error("Error fetching data. Please try again later.")
-        else:
-            st.warning("No companies match your search term. Please try another term.")
-    else:
-        st.write("Start typing the company name to see suggestions...")
+                        period_freq_mapping = {'Intraday': ('1', 'H'), 'Weekly': ('1', 'W'), 'Monthly': ('1', 'M')}
+                        period, freq = period_freq_mapping.get(time_series_type, ('1', 'D'))
+                        trend = predict_trend(df, int(period), freq)
+                        st.write(f"Trend Prediction for {company_name}: {trend}")
 
 if __name__ == "__main__":
     main()
