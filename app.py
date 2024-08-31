@@ -4,6 +4,9 @@ import pandas as pd
 import plotly.graph_objs as go
 from prophet import Prophet
 import json
+import warnings
+warnings.simplefilter(action='ignore', category=FutureWarning)
+
 
 # RapidAPI credentials
 RAPIDAPI_KEY = "af4b7ada73msh7333fb00c727f70p195232jsne091685d1739"
@@ -153,21 +156,19 @@ def convert_to_dataframe(time_series):
     return df
 
 # Function to train a model and predict stock trend
+# Function to train a model and predict stock trend
 def predict_trend(df, period, freq):
     df_prophet = df.reset_index().rename(columns={"index": "ds", "Close": "y"})
     
     model = Prophet(daily_seasonality=True)
     model.fit(df_prophet)
 
-    future = model.make_future_dataframe(periods=period, freq=freq)
+    # Use lowercase 'h', 'w', 'm' instead of 'H', 'W', 'M'
+    future = model.make_future_dataframe(periods=period, freq=freq.lower())
     forecast = model.predict(future)
 
-    fig = go.Figure()
-    fig.add_trace(go.Scatter(x=forecast['ds'], y=forecast['yhat'], mode='lines', name='Predicted Trend'))
-    fig.add_trace(go.Scatter(x=df_prophet['ds'], y=df_prophet['y'], mode='lines', name='Actual Price'))
-    fig.update_layout(title="Stock Price Prediction", xaxis_title="Date", yaxis_title="Price", hovermode='x')
-
-    st.plotly_chart(fig)
+    fig = model.plot(forecast)
+    st.pyplot(fig)
 
     forecast['trend_diff'] = forecast['yhat'].diff()
 
@@ -178,6 +179,7 @@ def predict_trend(df, period, freq):
         return "Down"
     else:
         return "Neutral"
+
 
 # Function to plot the stock data
 def plot_stock_data(df, symbol):
