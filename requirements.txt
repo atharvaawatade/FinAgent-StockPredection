@@ -3,4 +3,3 @@ prophet==1.1.5
 pandas==2.2.2
 plotly==5.24.0
 numpy==1.24.3
-sudo apt-get install python3-distutils
